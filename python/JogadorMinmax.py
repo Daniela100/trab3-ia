@@ -49,7 +49,6 @@ class JogadorMinMax(Jogador):
         self.MAXNIVEL = 10
         self.TEMPOMAXIMO = 1.0
         self.jogada = Jogada(-1, -1, -1, -1)
-        self.MAXPROF = 10
 
      # Calcula uma nova jogada para o tabuleiro e jogador corrente.
      # Aqui deve ser colocado o algoritmo com as t&eacute;cnicas de inteligencia
@@ -64,23 +63,25 @@ class JogadorMinMax(Jogador):
         usado = 0.0
         op = 1 if jogadorCor == 0 else 0
 
+        j = np.random.randint(0,14, (2))
         # se for jogador 1 e o tabuleiro está vazio
         if tab.numPecas(jogadorCor) + tab.numPecas(op) == 0:
-            jogada = Jogada(-1,-1,6,6)
+            jogada = Jogada(-1,-1,j[0],j[1])
             return jogada
 
         aux_tab = TabuleiroGoMoku()
         aux_tab.inicia(tab.getTab())
 
         possiveis = self.possiveisJogadas(tab, jogadorCor)
-        jogada = self.checarVencedor(possiveis, tab, jogadorCor)
+        # jogada = self.checarVencedor(possiveis, tab, jogadorCor)
 
-        if jogada != None:
-            return jogada
+        # if jogada != None:
+        #     return jogada
 
         for prof in range(1, self.MAXNIVEL):
             tempo2 = time.time()
-            t1 = threading.Thread(target=self.max, args=(aux_tab, jogadorCor, self.MAXPROF, possiveis))
+            
+            t1 = threading.Thread(target=self.melhorJogada, args=(tab, prof, possiveis, jogadorCor))
             t1.start()
             t1.join(self.TEMPOMAXIMO - usado)
             usado = tempo2 - tempo1
@@ -115,6 +116,24 @@ class JogadorMinMax(Jogador):
         return False
 
 
+    def countPecasJ(self, tab, jogada, jogador):
+        aux = TabuleiroGoMoku()
+        aux.inicia(tab.getTab())
+        aux.move(jogador, jogada)
+        linha = jogada.getLinha()
+        coluna = jogada.getColuna()
+        lista = []
+        lista.append(aux.count(jogador, linha, coluna, 1, 0))
+        lista.append(aux.count(jogador, linha, coluna, 0, 1))
+        lista.append(aux.count(jogador, linha, coluna, 1, -1))
+        lista.append(aux.count(jogador, linha, coluna, 1, 1))
+        return max(lista)
+    
+    def countPecas(self, tab, a, b, jogador):
+        j = self.countPecasJ(tab, Jogada(-1,-1,a,b), jogador)
+        o = self.countPecasJ(tab, Jogada(-1,-1,a,b), 1 if jogador == 0 else 0)
+        return max(j, o)
+    
     def possiveisJogadas(self, tab, jogador):
         a_tab = tab.getTab()
 
@@ -128,9 +147,38 @@ class JogadorMinMax(Jogador):
                         if p[0] >= 0 and p[0] < 13 and p[1] >= 0 and p[1] < 13:
                             if a_tab[p[0]][p[1]] == -1:
                                 if not self.naLista(possiveis, p[0], p[1]):
+                                    # maxP = self.countPecas(tab, p[0], p[1], jogador)
+                                    # possiveis.append((maxP, (p[0], p[1])))
                                     possiveis.append((p[0], p[1]))
+
+        # possiveis.sort(reverse=True)
+       
+        #jogadas = list()
+
+        # for p in possiveis:
+        #     jogadas.append(p[1])
         
+        # return jogadas
         return possiveis
+
+    
+    def melhorJogada(self, tab, prof, acoes, jogador):
+        maxj = [-1,-1,-99999]
+
+        for p in acoes:
+
+            a_tab = TabuleiroGoMoku()
+            a_tab.inicia(tab.getTab())
+            joga = Jogada(-1,-1, p[0], p[1])
+            a_tab.move(jogador, joga)
+            val = self.mim(a_tab, jogador, prof-1, acoes)
+
+            if val > maxj[2]:
+                maxj[0] = p[0]
+                maxj[1] = p[1]
+                maxj[2] = val
+        
+        self.jogada = Jogada(-1,-1, maxj[0], maxj[1])
 
 
     def max(self, tab, jogador, prof, acoes, alpha=-99999, beta=99999, jogada=None):
@@ -142,57 +190,54 @@ class JogadorMinMax(Jogador):
         a_tab.inicia(tab.getTab())
 
         maxVal = -99999
-        aux = acoes.copy()
-        
-        for p in acoes:
-            aux.remove(p)
-            joga = Jogada(-1,-1, p[0], p[1])
-            if jogada != None:
-                a_tab.move(jogador, joga)
 
-            val = self.mim(a_tab, jogador, prof-1, aux, alpha, beta, joga)
+        for p in acoes:
+            joga = Jogada(-1,-1, p[0], p[1])
+            if a_tab.verifica(jogador, joga) == 1:
+                if jogada != None:
+                    a_tab.move(jogador, joga)
+
+                val = self.mim(a_tab, jogador, prof-1, acoes, alpha, beta, joga)
+                    
+                if maxVal < val:
+                    maxVal = val
                 
-            if maxVal < val:
-                if jogada == None:
-                    self.jogada = joga
-                maxVal = val
-            
-            if alpha < val:
-                alpha = val
-            
-            if beta <= alpha:
-                break
+                if alpha < val:
+                    alpha = val
+                
+                if beta <= alpha:
+                    break
 
         return maxVal
 
     
     def mim(self, tab, jogador, prof, acoes, alpha=-99999, beta=99999, jogada=None):
         if prof == 0 or (jogada != None and tab.temosVencedor(jogada.getLinha(), jogada.getColuna())):
-            return tab.heuristicaBasica(jogador, tab.getTab())
+            val = tab.heuristicaBasica(jogador, tab.getTab())
+
+            return val
 
         a_tab = TabuleiroGoMoku()
         a_tab.inicia(tab.getTab())
 
-        mimVal = -99999
-        aux = acoes.copy()
-
+        mimVal = 99999
         for p in acoes:
-            aux.remove(p)
             joga = Jogada(-1,-1, p[0], p[1])
-            if jogada != None:
-                a_tab.move(jogador, joga)
+            if a_tab.verifica(jogador, joga) == 1:
+                
+                if jogada != None:
+                    a_tab.move(jogador, joga)
 
-            val = self.max(a_tab, jogador, prof-1, aux, alpha, beta, joga)
-            if mimVal > val:
-                if jogada == None:
-                    self.jogada = jogada
-                mimVal = val
-            
-            if beta > val:
-                beta = val
-            
-            if beta <= alpha:
-                break
+                val = self.max(a_tab, jogador, prof-1, acoes, alpha, beta, joga)
+                
+                if mimVal > val:
+                    mimVal = val
+                
+                if beta > val:
+                    beta = val
+                
+                if beta <= alpha:
+                    break
 
         return mimVal
 
